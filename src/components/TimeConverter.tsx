@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { formatInTimeZone, zonedTimeToUtc } from 'date-fns-tz';
+import { format, addDays, subDays } from 'date-fns';
+import { formatInTimeZone, zonedTimeToUtc, getTimezoneOffset } from 'date-fns-tz';
 import { Clock, ArrowRight, Copy, RefreshCw, Save } from 'lucide-react';
 import TimezoneSearchInput from './TimezoneSearchInput';
 import { timezones } from '../data/timezones';
@@ -11,7 +11,9 @@ const TimeConverter: React.FC = () => {
   const [fromTimezone, setFromTimezone] = useState('America/New_York');
   const [toTimezone, setToTimezone] = useState('Europe/London');
   const [inputTime, setInputTime] = useState('');
+  const [inputDate, setInputDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [convertedTime, setConvertedTime] = useState('');
+  const [convertedDate, setConvertedDate] = useState('');
   const [currentSourceTime, setCurrentSourceTime] = useState('');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
@@ -24,9 +26,10 @@ const TimeConverter: React.FC = () => {
       const sourceTime = formatInTimeZone(now, fromTimezone, 'HH:mm');
       setCurrentSourceTime(sourceTime);
       
-      // Only update input time if using current time
+      // Only update input time and date if using current time
       if (isUsingCurrentTime) {
         setInputTime(sourceTime);
+        setInputDate(formatInTimeZone(now, fromTimezone, 'yyyy-MM-dd'));
       }
     };
 
@@ -40,29 +43,34 @@ const TimeConverter: React.FC = () => {
     const now = new Date();
     const sourceTime = formatInTimeZone(now, fromTimezone, 'HH:mm');
     setInputTime(sourceTime);
+    setInputDate(formatInTimeZone(now, fromTimezone, 'yyyy-MM-dd'));
   }, []);
 
   useEffect(() => {
-    if (!inputTime) return;
+    if (!inputTime || !inputDate) return;
     
     try {
       const [hours, minutes] = inputTime.split(':').map(Number);
-      const now = new Date();
+      const [year, month, day] = inputDate.split('-').map(Number);
       
-      // Create a date object for today with the input time
-      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+      // Create a date object with the input date and time
+      const date = new Date(year, month - 1, day, hours, minutes);
       
       // Convert the date to UTC in the source timezone
       const utcDate = zonedTimeToUtc(date, fromTimezone);
       
       // Format in target timezone
-      const converted = formatInTimeZone(utcDate, toTimezone, 'HH:mm');
-      setConvertedTime(converted);
+      const convertedDateTime = formatInTimeZone(utcDate, toTimezone, "yyyy-MM-dd'T'HH:mm");
+      const [convertedDateStr, convertedTimeStr] = convertedDateTime.split('T');
+      
+      setConvertedTime(convertedTimeStr);
+      setConvertedDate(convertedDateStr);
     } catch (error) {
       console.error('Error converting time:', error);
       setConvertedTime('--:--');
+      setConvertedDate('----/--/--');
     }
-  }, [fromTimezone, toTimezone, inputTime]);
+  }, [fromTimezone, toTimezone, inputTime, inputDate]);
 
   useEffect(() => {
     const savedFavorites = localStorage.getItem('timeconvert-favorites');
@@ -75,8 +83,8 @@ const TimeConverter: React.FC = () => {
     setFromTimezone(value);
     if (isUsingCurrentTime) {
       const now = new Date();
-      const sourceTime = formatInTimeZone(now, value, 'HH:mm');
-      setInputTime(sourceTime);
+      setInputTime(formatInTimeZone(now, value, 'HH:mm'));
+      setInputDate(formatInTimeZone(now, value, 'yyyy-MM-dd'));
     }
   };
 
@@ -87,6 +95,11 @@ const TimeConverter: React.FC = () => {
   const handleTimeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     setIsUsingCurrentTime(false);
     setInputTime(e.target.value);
+  };
+
+  const handleDateInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsUsingCurrentTime(false);
+    setInputDate(e.target.value);
   };
 
   const saveFavorite = () => {
@@ -112,7 +125,7 @@ const TimeConverter: React.FC = () => {
   };
 
   const copyToClipboard = () => {
-    const textToCopy = `${inputTime} in ${fromTimezone} is ${convertedTime} in ${toTimezone}`;
+    const textToCopy = `${inputTime} ${inputDate} in ${fromTimezone} is ${convertedTime} ${convertedDate} in ${toTimezone}`;
     navigator.clipboard.writeText(textToCopy).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -121,8 +134,8 @@ const TimeConverter: React.FC = () => {
 
   const setCurrentTime = () => {
     const now = new Date();
-    const currentTime = formatInTimeZone(now, fromTimezone, 'HH:mm');
-    setInputTime(currentTime);
+    setInputTime(formatInTimeZone(now, fromTimezone, 'HH:mm'));
+    setInputDate(formatInTimeZone(now, fromTimezone, 'yyyy-MM-dd'));
     setIsUsingCurrentTime(true);
   };
 
@@ -171,9 +184,15 @@ const TimeConverter: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
         <div>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Time in {formatTimezone(fromTimezone)}
+            Date & Time in {formatTimezone(fromTimezone)}
           </label>
-          <div className="flex">
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={inputDate}
+              onChange={handleDateInput}
+              className="input bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
+            />
             <input
               type="time"
               value={inputTime}
@@ -182,7 +201,7 @@ const TimeConverter: React.FC = () => {
             />
             <button 
               onClick={setCurrentTime}
-              className="ml-2 btn btn-outline p-2 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
+              className="btn btn-outline p-2 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
               title="Set to current time"
             >
               <RefreshCw size={18} />
@@ -192,18 +211,24 @@ const TimeConverter: React.FC = () => {
         
         <div>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Time in {formatTimezone(toTimezone)}
+            Date & Time in {formatTimezone(toTimezone)}
           </label>
-          <div className="flex">
+          <div className="flex gap-2">
             <input
-              type="text"
+              type="date"
+              value={convertedDate}
+              readOnly
+              className="input bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
+            />
+            <input
+              type="time"
               value={convertedTime}
               readOnly
               className="input bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm"
             />
             <button 
               onClick={copyToClipboard}
-              className={`ml-2 btn ${copied ? 'btn-primary' : 'btn-outline'} p-2 ${!copied && 'bg-white/50 dark:bg-slate-800/50'} backdrop-blur-sm`}
+              className={`btn ${copied ? 'btn-primary' : 'btn-outline'} p-2 ${!copied && 'bg-white/50 dark:bg-slate-800/50'} backdrop-blur-sm`}
               title="Copy result"
             >
               <Copy size={18} />
@@ -260,8 +285,8 @@ const TimeConverter: React.FC = () => {
         <ol className="list-decimal pl-5 space-y-2 text-slate-600 dark:text-slate-300">
           <li>Select your source timezone in the "From Timezone" dropdown</li>
           <li>Select your target timezone in the "To Timezone" dropdown</li>
-          <li>Enter the time you want to convert, or use the current time</li>
-          <li>The converted time appears instantly</li>
+          <li>Enter the date and time you want to convert, or use the current time</li>
+          <li>The converted date and time appears instantly</li>
           <li>Save your favorite timezone pairs for quick access later</li>
         </ol>
       </section>
